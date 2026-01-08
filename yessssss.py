@@ -17,7 +17,7 @@ os.environ['NUMEXPR_NUM_THREADS'] = '2'
 # ==================== Hardware Profiles ====================
 HARDWARE_PROFILES = {
     'lowest': {
-        'name': 'Lowest (Integrated Graphics)',
+        'name': 'Lowest',
         'batch_size': 1,
         'num_frames': 8,
         'img_size': (96, 96),
@@ -73,11 +73,8 @@ HARDWARE_PROFILES = {
     }
 }
 
-
 # ==================== Dataset ====================
 class HandTrackingVideoDataset(Dataset):
-    """Dataset for hand tracking video sequences with smart buffering"""
-    
     def __init__(self, video_dir, num_frames=16, img_size=(224, 224), 
                  cache_mode='buffer', buffer_size=100, augment=False):
         """
@@ -96,8 +93,8 @@ class HandTrackingVideoDataset(Dataset):
         self.buffer_size = buffer_size
         self.augment = augment
         self.samples = []
-        self.cache = {}  # Cache for videos
-        self.cache_order = []  # Track order for LRU eviction
+        self.cache = {}  
+        self.cache_order = [] 
         
         # Load all video files from id folders
         self._load_video_paths()
@@ -122,9 +119,7 @@ class HandTrackingVideoDataset(Dataset):
         
         for id_folder in id_folders:
             # Extract activity ID from folder name (e.g., 'id_1' -> 0, 'id_2' -> 1)
-            activity_id = int(id_folder.name.split('_')[1]) - 1  # 0-indexed
-            
-            # Get all video files in this folder
+            activity_id = int(id_folder.name.split('_')[1]) - 1 
             video_files = sorted(list(id_folder.glob('*.mp4')) + list(id_folder.glob('*.MP4')))
             
             for video_path in video_files:
@@ -137,7 +132,6 @@ class HandTrackingVideoDataset(Dataset):
         print(f"Loaded {len(self.samples)} video segments from {len(id_folders)} activity classes")
     
     def _prefetch_all_videos(self):
-        """Load all videos into memory (high RAM, low CPU)"""
         for i, sample in enumerate(self.samples):
             if i % 100 == 0:
                 print(f"  Prefetching: {i}/{len(self.samples)}")
@@ -146,7 +140,6 @@ class HandTrackingVideoDataset(Dataset):
                 self.cache[sample['video_path']] = frames
     
     def _add_to_cache(self, video_path, frames):
-        """Add video to cache with LRU eviction"""
         if self.cache_mode != 'buffer':
             return
         
@@ -166,7 +159,6 @@ class HandTrackingVideoDataset(Dataset):
             del self.cache[oldest]
     
     def _get_from_cache_or_load(self, video_path):
-        """Get video from cache or load it"""
         if video_path in self.cache:
             # Move to end of LRU queue
             if self.cache_mode == 'buffer' and video_path in self.cache_order:
@@ -184,7 +176,6 @@ class HandTrackingVideoDataset(Dataset):
         return frames
     
     def _load_video(self, video_path):
-        """Load video and sample frames - optimized version"""
         cap = cv2.VideoCapture(video_path)
         
         # Get total frames
@@ -209,12 +200,10 @@ class HandTrackingVideoDataset(Dataset):
             if ret:
                 # Convert BGR to RGB and resize in one operation
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                # Use INTER_AREA for downsampling (faster and better quality)
                 frame = cv2.resize(frame, self.img_size, interpolation=cv2.INTER_AREA)
                 frames.append(frame)
         
         cap.release()
-        
         if len(frames) == 0:
             return None
         
@@ -237,9 +226,8 @@ class HandTrackingVideoDataset(Dataset):
         
         # Data augmentation for training
         if self.augment:
-            # Random horizontal flip
             if np.random.rand() > 0.5:
-                frames = np.flip(frames, axis=2).copy()  # Flip width axis
+                frames = np.flip(frames, axis=2).copy()  
             
             # Random brightness adjustment
             brightness_factor = np.random.uniform(0.8, 1.2)
@@ -260,17 +248,14 @@ class HandTrackingVideoDataset(Dataset):
         return frames, label.squeeze()
     
     def get_cache_stats(self):
-        """Get cache statistics"""
         return {
             'cached_videos': len(self.cache),
             'cache_mode': self.cache_mode,
             'buffer_size': self.buffer_size if self.cache_mode == 'buffer' else 'N/A'
         }
 
-
 # ==================== Model Components ====================
 class PatchEmbed3D(nn.Module):
-    """3D Patch Embedding for video data"""
     
     def __init__(self, img_size=(224, 224), patch_size=(2, 4, 4), in_channels=3, embed_dim=96):
         super().__init__()
@@ -284,15 +269,13 @@ class PatchEmbed3D(nn.Module):
     
     def forward(self, x):
         # x: (B, C, T, H, W)
-        x = self.proj(x)  # (B, embed_dim, T', H', W')
+        x = self.proj(x)
         B, C, T, H, W = x.shape
-        x = x.flatten(2).transpose(1, 2)  # (B, T'*H'*W', C)
+        x = x.flatten(2).transpose(1, 2) 
         x = self.norm(x)
         return x, (T, H, W)
 
-
 class WindowAttention3D(nn.Module):
-    """Window-based Multi-head Self Attention for 3D windows"""
     
     def __init__(self, dim, num_heads, window_size=(8, 7, 7), qkv_bias=True, attn_drop=0., proj_drop=0.):
         super().__init__()
@@ -325,7 +308,6 @@ class WindowAttention3D(nn.Module):
         x = self.proj(x)
         x = self.proj_drop(x)
         return x
-
 
 class SwinTransformerBlock3D(nn.Module):
     """Swin Transformer Block for 3D data"""
@@ -361,9 +343,7 @@ class SwinTransformerBlock3D(nn.Module):
         x = x + self.mlp(self.norm2(x))
         return x
 
-
 class VideoSwinTransformer(nn.Module):
-    """Video Swin Transformer for activity recognition"""
     
     def __init__(self, 
                  img_size=(224, 224),
@@ -408,7 +388,6 @@ class VideoSwinTransformer(nn.Module):
                 ) for _ in range(depths[i_layer])
             ])
             self.layers.append(layer_blocks)
-            
             # Patch merging (downsample) except last layer
             if i_layer < self.num_layers - 1:
                 downsample = nn.Linear(dim, dim * 2)
@@ -430,14 +409,12 @@ class VideoSwinTransformer(nn.Module):
             nn.init.constant_(m.weight, 1.0)
     
     def forward(self, x):
-        # x: (B, C, T, H, W)
-        x, (T, H, W) = self.patch_embed(x)  # (B, N, embed_dim)
+        x, (T, H, W) = self.patch_embed(x) 
         x = self.pos_drop(x)
         
         # Process through layers
         for i, layer in enumerate(self.layers):
             if isinstance(layer, nn.ModuleList):
-                # Transformer blocks
                 for blk in layer:
                     x = blk(x)
             else:
@@ -452,26 +429,21 @@ class VideoSwinTransformer(nn.Module):
         
         return x
 
-
 # ==================== Training ====================
 def train_epoch(model, dataloader, criterion, optimizer, device):
     model.train()
     total_loss = 0
     correct = 0
     total = 0
-    
     epoch_start_time = time.time()
     batch_times = []
     
     for batch_idx, (data, target) in enumerate(dataloader):
         batch_start_time = time.time()
-        
         data, target = data.to(device), target.to(device)
-        
         optimizer.zero_grad()
         output = model(data)
         loss = criterion(output, target)
-        
         loss.backward()
         optimizer.step()
         
@@ -503,39 +475,30 @@ def train_epoch(model, dataloader, criterion, optimizer, device):
     
     epoch_time = time.time() - epoch_start_time
     avg_batch_time = np.mean(batch_times)
-    
     return total_loss / len(dataloader), 100. * correct / total, epoch_time, avg_batch_time
-
 
 def validate(model, dataloader, criterion, device):
     model.eval()
     total_loss = 0
     correct = 0
     total = 0
-    
     val_start_time = time.time()
-    
     with torch.no_grad():
         for data, target in dataloader:
             data, target = data.to(device), target.to(device)
             output = model(data)
             loss = criterion(output, target)
-            
             total_loss += loss.item()
             _, predicted = output.max(1)
             total += target.size(0)
             correct += predicted.eq(target).sum().item()
-    
     val_time = time.time() - val_start_time
-    
     return total_loss / len(dataloader), 100. * correct / total, val_time
-
 
 # ==================== Main Training Script ====================
 def main(resume=False, hardware_profile='high'):
     """
     Main training function
-    
     Args:
         resume: Whether to resume from checkpoint
         hardware_profile: One of 'lowest', 'low', 'medium', 'high', 'highest'
@@ -555,15 +518,12 @@ def main(resume=False, hardware_profile='high'):
         device = torch.device('cuda')
         print(f"GPU detected: {torch.cuda.get_device_name(0)}")
         print(f"GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
-        
         # Use config values
         batch_size = config['batch_size']
         num_frames = config['num_frames']
         img_size = config['img_size']
         num_workers = 2
         pin_memory = True
-        
-        # Set OpenCV thread count to reduce CPU usage
         cv2.setNumThreads(2)
         # Clear GPU cache
         torch.cuda.empty_cache()
@@ -579,7 +539,7 @@ def main(resume=False, hardware_profile='high'):
     
     # Hyperparameters
     num_epochs = 100  
-    learning_rate = 5e-5  # Reduced from 1e-4
+    learning_rate = 5e-5 
     print(f"Using device: {device}")
     print(f"Batch size: {batch_size}, Frames: {num_frames}, Image size: {img_size}")
     print(f"Embed dim: {config['embed_dim']}, Depths: {config['depths']}\n")
@@ -589,9 +549,8 @@ def main(resume=False, hardware_profile='high'):
     #   'none': No caching - load from disk every time (lowest RAM, highest CPU)
     #   'buffer': Smart buffer - keep recent videos in RAM (balanced)
     #   'full': Load all videos into RAM (highest RAM, lowest CPU)
-    
     cache_mode = 'buffer'  # Recommended default
-    buffer_size = 200  # Keep 200 videos in memory (~400-800MB RAM)
+    buffer_size = 200  # Keep 200 videos in memory
     
     # Create training dataset WITH augmentation
     full_dataset = HandTrackingVideoDataset(
@@ -600,7 +559,7 @@ def main(resume=False, hardware_profile='high'):
         img_size=img_size,
         cache_mode=cache_mode,
         buffer_size=buffer_size,
-        augment=False  # Will set per split
+        augment=False 
     )
     
     # Split into train and validation (80/20 split)
@@ -662,7 +621,7 @@ def main(resume=False, hardware_profile='high'):
     print(f"Model parameters: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M")
     
     # Loss and optimizer - FIXED learning rate
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)  # Label smoothing helps
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.1) 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=0.01)
     
     # Better learning rate schedule
@@ -828,7 +787,6 @@ def predict_video(model, video_path, num_frames, img_size, device):
     
     return activity_names[predicted_class], confidence_score, probabilities[0].cpu().numpy()
 
-
 def real_time_video_prediction(model, video_path, num_frames, img_size, device, window_stride=8):
     """
     Process video with sliding window for real-time intention decoding
@@ -913,7 +871,6 @@ def real_time_video_prediction(model, video_path, num_frames, img_size, device, 
     
     return predictions
 
-
 # Example usage for inference
 def inference_example():
     """Example of how to use the trained model for inference"""
@@ -934,7 +891,6 @@ def inference_example():
         model, video_path, num_frames, img_size, device, window_stride=8
     )
 
-
 if __name__ == '__main__':
     # ============================================
     # SELECT YOUR HARDWARE PROFILE HERE:
@@ -945,7 +901,7 @@ if __name__ == '__main__':
     
     # Run training
     # Set resume=True to continue from best_video_swin_model.pth
-    main(resume=True, hardware_profile=PROFILE)
+    main(resume=False, hardware_profile=PROFILE)
     
     # Uncomment to run inference after training
     # inference_example()
