@@ -8,6 +8,62 @@ import os
 import cv2
 from pathlib import Path
 import time
+import sys
+import logging
+
+def setup_single_log_file(log_file="log.txt"):
+    logger = logging.getLogger("train_logger")
+    logger.setLevel(logging.INFO)
+
+    if logger.handlers:
+        return logger
+
+    formatter = logging.Formatter(
+        "%(asctime)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+
+    file_handler = logging.FileHandler(log_file, mode="a", encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(logging.INFO)
+
+    console_handler = logging.StreamHandler(sys.__stdout__)
+    console_handler.setFormatter(formatter)
+    console_handler.setLevel(logging.INFO)
+
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+
+    return logger
+
+
+class PrintToLogger:
+    def __init__(self, logger):
+        self.logger = logger
+
+    def write(self, message):
+        if message.strip():
+            self.logger.info(message.strip())
+
+    def flush(self):
+        for handler in self.logger.handlers:
+            handler.flush()
+
+
+def maybe_flush(logger, last_flush_time, interval_sec=20 * 60):
+    if time.time() - last_flush_time >= interval_sec:
+        for handler in logger.handlers:
+            handler.flush()
+        logger.info("---- log flushed ----")
+        return time.time()
+    return last_flush_time
+
+
+logger = setup_single_log_file("log.txt")
+sys.stdout = PrintToLogger(logger)
+sys.stderr = PrintToLogger(logger)
+
+last_flush_time = time.time()
 
 # Set environment variables to reduce CPU usage
 os.environ['OMP_NUM_THREADS'] = '2'
@@ -431,6 +487,7 @@ class VideoSwinTransformer(nn.Module):
 
 # ==================== Training ====================
 def train_epoch(model, dataloader, criterion, optimizer, device):
+    global last_flush_time
     model.train()
     total_loss = 0
     correct = 0
@@ -475,6 +532,7 @@ def train_epoch(model, dataloader, criterion, optimizer, device):
     
     epoch_time = time.time() - epoch_start_time
     avg_batch_time = np.mean(batch_times)
+    last_flush_time = maybe_flush(logger, last_flush_time)
     return total_loss / len(dataloader), 100. * correct / total, epoch_time, avg_batch_time
 
 def validate(model, dataloader, criterion, device):
@@ -513,6 +571,16 @@ def main(resume=False, hardware_profile='high'):
     print(f"Hardware Profile: {config['name']}")
     print(f"{'='*80}\n")
     
+    #for epoch in range(start_epoch, num_epochs):
+       # print(f"\nEpoch {epoch+1}/{num_epochs}")
+
+        #train_loss, train_acc, train_time, avg_batch_time = train_epoch(...)
+       # val_loss, val_acc, val_time = validate(...)
+
+       #last_flush_time = maybe_flush(logger, last_flush_time)
+
+   # print("Training finished")
+
     # Check CUDA availability
     if torch.cuda.is_available():
         device = torch.device('cuda')
