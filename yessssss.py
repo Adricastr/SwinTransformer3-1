@@ -965,7 +965,7 @@ if __name__ == '__main__':
     # ============================================
     # Options: 'lowest', 'low', 'medium', 'high', 'highest'
     
-    PROFILE = 'low'  # <--- CHANGE THIS FOR YOUR GPU
+    PROFILE = 'medium'  # <--- CHANGE THIS FOR YOUR GPU
     
     # Run training
     # Set resume=True to continue from best_video_swin_model.pth
